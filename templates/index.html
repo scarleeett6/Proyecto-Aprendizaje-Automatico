@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Riesgo de Inundacion por Parroquia</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; }
+        #mapa { width: 100%; height: 90vh; }
+        #panel-popup {
+            display: none;
+            position: absolute;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            font-size: 14px;
+            z-index: 999;
+        }
+        #leyenda-riesgo {
+            position: fixed;
+            left: 20px;
+            bottom: 20px;
+            background: #000;
+            color: #fff;
+            border-radius: 8px;
+            padding: 14px 18px;
+            font-size: 16px;
+            z-index: 998;
+            line-height: 1.9;
+        }
+        #leyenda-riesgo .fila {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        #leyenda-riesgo .punto {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="mapa"></div>
+    <div id="panel-popup"></div>
+
+    <div id="leyenda-riesgo">
+        <div class="fila"><span class="punto" style="background:#2ecc71"></span> Riesgo bajo</div>
+        <div class="fila"><span class="punto" style="background:#f39c12"></span> Riesgo medio</div>
+        <div class="fila"><span class="punto" style="background:#e74c3c"></span> Riesgo alto</div>
+        <div class="fila"><span class="punto" style="background:#bdc3c7"></span> Sin dato</div>
+    </div>
+
+    <script>
+        const colores_riesgo = {
+            'bajo':      '#2ecc71',
+            'medio':     '#f39c12',
+            'alto':      '#e74c3c',
+            'sin_dato':  '#bdc3c7'
+        };
+
+        const chart = echarts.init(document.getElementById('mapa'));
+
+        fetch('/api/mapa')
+            .then(res => res.json())
+            .then(geojson => {
+
+                echarts.registerMap('parroquias', geojson);
+
+                const datos = geojson.features.map(f => ({
+                    name: f.properties.DPA_DESPAR,
+                    value: f.properties.score_riesgo,
+                    categoria: f.properties.categoria_riesgo,
+                    canton: f.properties.canton,
+                    provincia: f.properties.provincia,
+                    itemStyle: { areaColor: colores_riesgo[f.properties.categoria_riesgo] }
+                }));
+
+                const option = {
+                    title: {
+                        text: 'Riesgo de Inundacion por Parroquia',
+                        left: 'center'
+                    },
+                    tooltip: {
+                        trigger: 'item',
+                        formatter: params => {
+                            const d = params.data;
+                            if (!d) return params.name;
+                            return `<b>${params.name}</b><br/>
+                                    Canton: ${d.canton}<br/>
+                                    Provincia: ${d.provincia}`;
+                        }
+                    },
+                    series: [{
+                        name: 'Riesgo',
+                        type: 'map',
+                        map: 'parroquias',
+                        roam: true,
+                        data: datos,
+                        emphasis: {
+                            itemStyle: { areaColor: '#333' }
+                        }
+                    }]
+                };
+
+                chart.setOption(option);
+
+                chart.on('click', function (params) {
+                    const d = params.data;
+                    if (!d) return;
+
+                    const panel = document.getElementById('panel-popup');
+                    panel.innerHTML = `
+                        <b>${params.name}</b><br/>
+                        Categoria de riesgo: <b>${d.categoria}</b><br/>
+                        Score del modelo: ${d.value !== null ? d.value.toFixed(3) : 'N/D'}
+                    `;
+                    panel.style.left = params.event.event.pageX + 10 + 'px';
+                    panel.style.top  = params.event.event.pageY + 10 + 'px';
+                    panel.style.display = 'block';
+                });
+
+                document.addEventListener('click', function (e) {
+                    if (!e.target.closest('#mapa')) {
+                        document.getElementById('panel-popup').style.display = 'none';
+                    }
+                });
+            });
+
+        window.addEventListener('resize', () => chart.resize());
+    </script>
+
+</body>
+</html>
